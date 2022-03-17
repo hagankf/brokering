@@ -1,0 +1,586 @@
+---
+title: "Language Brokering Among Latino Adolescents in Oregon"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: flatly
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(janitor)
+library(here)
+library(rio)
+library(haven)
+library("devtools")
+library(stringr)
+library(surveytoolbox)
+library("colorblindr")
+library(ggalt)
+library(ggtext)
+library(ragg)
+library(lubridate)
+library(scales)
+```
+
+```{r import_parent_data}
+
+parent_wave1 <- rio::import(here("data", "Juntos Parent W1.sav"), setclass = "tbl_df")
+parent_wave2 <- rio::import(here("data", "Juntos Parent W2.sav"), setclass = "tbl_df")
+parent_wave3 <- rio::import(here("data", "Juntos Parent W3.sav"), setclass = "tbl_df")
+
+```
+
+```{r prep_parent_data}
+
+pw1 <- parent_wave1 %>%
+  janitor::clean_names() %>%
+  characterize() %>%
+  filter(finished == "True") %>% #removes 3 of the original 128 observations
+  select(fam_id = id_1_text,
+         response_id = response_id,
+         participant = participant,
+         wave = wave, 
+         school = school,
+         broker_freq = q171) %>%
+  arrange(fam_id)
+
+```
+
+```{r further_prep_for_two_parents}
+
+#looking for any duplicates of fam_id in the data set. 
+mult_fam_ids <-pw1 %>% count(fam_id) %>%
+               filter(n>1)
+
+#27 fam_ids for which there is more than one adult respondent, putting these in their own tibble:
+two_or_more <- mult_fam_ids$fam_id
+
+mult_fam_ids1 <-pw1 %>%
+               filter(fam_id %in% two_or_more)
+
+#For fam_id 415, there are three adult respondents, and one of them reports a school that does not coincide with the other two parents, so filtering this response (R_1ON5POXTzIXrIeb) out. 
+#There are also three adult respondents for fam_id 418
+#case418 <- parent_wave1 %>%
+#           clean_names() %>%
+#            rename(fam_id = id_1_text) %>%
+#            filter(fam_id == 418)
+
+#after looking at this case for a bit, I don't know if this adolescent has three caregivers, or if one of the responses is invalid. will filter out this case for now.
+
+pw1 <- pw1 %>%
+        filter(response_id != "R_1ON5POXTzIXrIeb") %>%
+        filter(fam_id != 418)
+
+two_parent_subset <- pw1 %>%
+                     filter(fam_id %in% two_or_more) #26 adolescents had two parents who responded
+```
+*Proyecto Juntos* {.sidebar}
+==============================
+Proyecto Juntos represents a collaboration between the University of Oregon's  
+[Center for Equity Promotion](https://ceqp.uoregon.edu) and participating Oregon
+schools. The data includes a self-report measure from participating parents regarding the frequency with which their adolescents serve as interpreters or translators on behalf of their parents. Language brokering is a complex phenomenon of interest for a number of reasons. [Martinez, McClure, and Eddy (2009)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2630236/) have observed that language brokering may be an index of differential linguistic acculturation between parents and youth. Additionally, language brokering may be an indicator of the extent to which a community (in this case, Oregon communities where participants are situated) supports language access. Insofar as language brokering is unlikely in social and institutional contexts that have mobilized language resources, language brokering may be an indicator of a gap in supports; stated differently, parent-reported youth brokering may indicate a mismatch between language needs and language resources.
+This page seeks to (1) characterize brokering frequency in a sample at baseline and at two follow-up time points six and twelve months later, (2a) examine the premise that language brokering indexes differential acculturation between parents and youth by looking for a relationship between differential linguistic acculturation and language brokering, (2b) explore the possibility that language brokering and differential linguistic acculturation are related to a measure of youth emotional adjustment.  
+
+# Descriptives {data-icon="fa-door-open"}
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Whole sample
+```{r}
+pw1 <- pw1 %>%
+        mutate(broker_factor = factor(broker_freq, levels = c("Nunca o casi nunca",
+                                                              "Algunas veces",
+                                                              "Mitad del tiempo",
+                                                              "Casi siempre",
+                                                              "Siempre")), 
+               parent = as.factor(participant)) %>%
+        mutate(broker_factor = fct_recode(broker_factor,
+                                          "Never or almost never" = "Nunca o casi nunca", 
+                                          "Sometimes" = "Algunas veces",
+                                          "Half of the time" = "Mitad del tiempo",
+                                          "Most of the time" = "Casi siempre",
+                                          "All of the time" = "Siempre")) 
+
+#Viz 1: frequency of each response type for all 121 parents in the sample
+
+pw1 %>% drop_na() %>%
+  ggplot(aes(broker_factor)) +
+  xlab("") + ylab("Number of parents") +
+  geom_bar(fill = "#089c74") +
+  scale_x_discrete(labels = function(broker_factor) str_wrap(broker_factor, width = 12)) +
+  #scale_y_continuous(expand=c(0,0)) +
+  labs(#title = "Parental Report of Adolescent Language Brokering",
+       subtitle = "50 of 121 parents report that adolescents sometimes interpret or translate") + #,
+       #caption = "Data collected by University of Oregon Center for Equity Promotion.") +
+  theme_minimal() +
+  theme(
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.border = element_blank(),
+  axis.ticks = element_blank())
+
+```
+
+### Moms and Dads
+
+```{r}
+#Viz 2: for subset of youth with two parents reporting, what is difference between moms and dads?
+
+two_parent_subset <- two_parent_subset %>%
+        mutate(broker_factor = factor(broker_freq, levels = c("Nunca o casi nunca",
+                                                              "Algunas veces",
+                                                              "Mitad del tiempo",
+                                                              "Casi siempre",
+                                                              "Siempre")), 
+               parent = as.factor(participant)) %>%
+        mutate(broker_factor = fct_recode(broker_factor,
+                                          "Never or almost never" = "Nunca o casi nunca", 
+                                          "Sometimes" = "Algunas veces",
+                                          "Half of the time" = "Mitad del tiempo",
+                                          "Most of the time" = "Casi siempre",
+                                          "All of the time" = "Siempre")) 
+
+two_parent_subset %>%
+  ggplot(aes(broker_factor)) +
+  geom_bar(data = select(two_parent_subset, -parent),
+    fill = "gray80") +
+  geom_bar(aes(fill = parent)) +
+  facet_wrap(~parent) +
+    guides(fill = "none") +
+  scale_x_discrete(labels = function(broker_factor) str_wrap(broker_factor, width = 7)) +
+  xlab("") + ylab("Number of parents") +
+  labs(subtitle = "But more dads than moms report zero brokering by adolescent") +
+  theme_minimal() +
+  theme(
+  panel.grid.major=element_blank(),
+  panel.grid.minor=element_blank(),
+  panel.border=element_blank(),
+  axis.ticks=element_blank()) +
+  scale_fill_OkabeIto()
+  
+```
+
+### by Household
+
+```{r}
+dumbbell_d2 <- two_parent_subset %>%
+  mutate(broker_num = as.numeric(broker_factor)) %>%
+  select(fam_id, parent, broker_num) %>%
+  pivot_wider(
+    names_from = parent, 
+    values_from = broker_num, 
+    id_cols = fam_id
+  ) %>%
+  mutate(parent_diff = Mom - Dad,
+         fam_id = fct_reorder2(fam_id, Dad, parent_diff)) %>%
+  arrange(fam_id) #%>%
+ 
+dumbbell_d3 <- dumbbell_d2 %>%
+  filter(Mom == Dad)
+
+dumbbell_d2 %>%
+  ggplot(aes(y = fam_id, x = factor(Mom), xend = Dad)) +
+  geom_dumbbell(
+    size=1.5, 
+    color="#b2b2b2", 
+    size_x=3, 
+    size_xend = 3, 
+    colour_x = "#2596be",  
+    colour_xend = "#e8a000") +
+  geom_point(data = dumbbell_d3, aes(x = Mom), size = 3, color = "black") +
+  xlab("Brokering Frequency") + ylab("") +
+  scale_x_discrete(labels = c("Never or almost never", " ", " ", "", "All of the time")) +
+  labs(subtitle = expression('Interparental'~bold(agreement)~'on language brokering in half of two-parent households')) +
+  #    caption = "Data collected by University of Oregon Center for Equity Promotion.") +
+  theme_minimal() +
+  theme(
+    title = ggtext::element_markdown(),
+  #panel.grid.major=element_blank(),
+  panel.grid.minor=element_blank(),
+  panel.border=element_blank(),
+  #axis.ticks=element_blank(), 
+  axis.text.y=element_blank()
+  ) +
+  geom_text(data = dumbbell_d2, 
+                    aes(x = 3, y = "110", label = "Maternal report"),
+                    color = "#2596be", vjust = 1.55, size = 3) +
+  geom_text(data = dumbbell_d2, 
+                    aes(x = 5, y = "110", label = "Paternal report"),
+                    color = "#e8a000", vjust = 1.55, size = 3) + 
+  geom_text(data = dumbbell_d3, 
+                    aes(x = 5, y = "601", label = "Independent agreement"),
+                    color = "black", vjust = 1.55, size = 3) 
+  
+```
+
+### Over Time
+
+```{r, message = FALSE}
+
+pw1_time <- parent_wave1 %>%
+  janitor::clean_names() %>%
+  characterize() %>%
+  filter(finished == "True") %>% #removes 3 of the original 128 observations
+  select(fam_id = id_1_text,
+         response_id = response_id,
+         participant = participant,
+         wave = wave,
+         date = recorded_date,
+         broker_freq = q171) %>%
+  arrange(fam_id) %>%
+  filter(response_id != "R_1ON5POXTzIXrIeb") %>%
+  filter(fam_id != 418) %>%
+  filter(participant == "Mom") %>%
+        mutate(broker_factor = factor(broker_freq, levels = c("Nunca o casi nunca",
+                                                              "Algunas veces",
+                                                              "Mitad del tiempo",
+                                                              "Casi siempre",
+                                                              "Siempre"))) %>%
+        mutate(broker_factor = fct_recode(broker_factor,
+                                          "Never or almost never" = "Nunca o casi nunca", 
+                                          "Sometimes" = "Algunas veces",
+                                          "Half of the time" = "Mitad del tiempo",
+                                          "Most of the time" = "Casi siempre",
+                                          "All of the time" = "Siempre")) %>%
+        mutate(date = lubridate::as_datetime(date)) %>%
+        mutate(broker_num = as.numeric(broker_factor)) %>%
+        filter(broker_num >= 0 &
+         broker_num <=5)
+
+pw2_time <- parent_wave2 %>%
+  janitor::clean_names() %>%
+  characterize() %>%
+  filter(finished == "True") %>% #removes 5 of the original 114 observations
+  select(fam_id = id_1_text,
+         response_id = response_id,
+         participant = participant,
+         wave = wave,
+         date = recorded_date,
+         broker_freq = q171) %>%
+  arrange(fam_id) %>%
+  filter(fam_id != 418 &
+           fam_id != 415 &
+           fam_id != 108 &
+           fam_id != 314) %>%
+  filter(participant == "Mom" &
+           wave == 2) %>% #there is a 1 and a 3 in the initial data set
+        mutate(broker_factor = factor(broker_freq, levels = c("Nunca o casi nunca",
+                                                              "Algunas veces",
+                                                              "Mitad del tiempo",
+                                                              "Casi siempre",
+                                                              "Siempre"))) %>%
+        mutate(broker_factor = fct_recode(broker_factor,
+                                          "Never or almost never" = "Nunca o casi nunca", 
+                                          "Sometimes" = "Algunas veces",
+                                          "Half of the time" = "Mitad del tiempo",
+                                          "Most of the time" = "Casi siempre",
+                                          "All of the time" = "Siempre")) %>%
+        mutate(date = lubridate::as_datetime(date)) %>%
+        mutate(broker_num = as.numeric(broker_factor)) %>%
+        filter(broker_num >= 0 &
+         broker_num <=5)
+
+pw3_time <- parent_wave3 %>%
+  janitor::clean_names() %>%
+  characterize() %>%
+  filter(finished == "True") %>% #removes 5 of the original 114 observations
+  select(fam_id = id_1_text,
+         response_id = response_id,
+         participant = participant,
+         wave = wave,
+         date = recorded_date,
+         broker_freq = q171) %>%
+  arrange(fam_id) %>%
+  #filter(fam_id != 418 &
+   #        fam_id != 415 &
+  #         fam_id != 108 &
+   #        fam_id != 314) %>%
+  filter(participant == "Mom" &
+           wave == 3) %>% 
+        mutate(broker_factor = factor(broker_freq, levels = c("Nunca o casi nunca",
+                                                              "Algunas veces",
+                                                              "Mitad del tiempo",
+                                                              "Casi siempre",
+                                                              "Siempre"))) %>%
+        mutate(broker_factor = fct_recode(broker_factor,
+                                          "Never or almost never" = "Nunca o casi nunca", 
+                                          "Sometimes" = "Algunas veces",
+                                          "Half of the time" = "Mitad del tiempo",
+                                          "Most of the time" = "Casi siempre",
+                                          "All of the time" = "Siempre")) %>%
+        mutate(date = lubridate::as_datetime(date)) %>%
+        mutate(broker_num = as.numeric(broker_factor)) %>%
+        filter(broker_num >= 0 &
+         broker_num <=5)
+
+over_time1 <- left_join(pw1_time, pw2_time, by = "fam_id") %>%
+  select(c(fam_id, starts_with("date"), starts_with("broker_num")))
+
+over_time2 <- left_join(over_time1, pw3_time, by = "fam_id") %>%
+  select(c(fam_id, starts_with("date"), starts_with("broker_num"))) %>%
+  rename(date.z = date, 
+         broker_num.z = broker_num)
+
+over_time3 <- over_time2 %>%
+  pivot_longer(
+    cols = starts_with("date"),
+    names_to = "timepoint",
+    names_prefix = "date.",
+    values_to = "date",
+    values_drop_na = FALSE
+  )
+
+over_time4 <- over_time3 %>%
+  pivot_longer(
+    cols = starts_with("broker_num"),
+    names_to = "timepoint2",
+    names_prefix = "broker_num.",
+    values_to = "brokering",
+    values_drop_na = FALSE
+  )
+
+average <- over_time4 %>%
+  filter(timepoint == timepoint2) %>%
+  filter(complete.cases(.)) %>%
+  mutate(timepoint = as.factor(timepoint)) %>%
+  group_by(timepoint, .drop = FALSE) %>%
+  mutate(mean = mean(brokering)) %>%
+  ungroup() 
+
+average %>%
+  filter(complete.cases(.)) %>%
+  group_by(fam_id) %>%
+  ggplot(aes(date, jitter(brokering, 2))) +
+  geom_line(aes(group = fam_id),alpha = 0.2) +
+  geom_smooth(color = "#d55e00") +
+  #geom_line(aes(date, y = mean), color = "blue")
+  xlab("") + ylab("Parent-reported brokering frequency") +
+  labs(subtitle = "Language brokering appears to vary widely for some, and less for others") +
+  #    caption = "Data collected by University of Oregon Center for Equity Promotion.") +
+  theme_minimal() 
+
+```
+
+# Correlates {data-icon="fa-clone"}
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Youth-parent difference with respect to English comfort is only marginally predictive of brokering
+
+```{r, message=FALSE}
+youth_wave1 <- rio::import(here("data", "Youth W1.sav"), setclass = "tbl_df")
+
+yw1 <- youth_wave1 %>%
+  janitor::clean_names() %>%
+  factorize() %>%
+  filter(response_id != "R_2wMlBAGtO7lzpRo") %>% #removing false start
+  select(fam_id = h1_1_text,
+         sp_comf_home = q93, 
+         sp_comf_school = q94,
+         sp_comf_friends = q95, 
+         sp_comf_general = q96, 
+         eng_comf_home = q97, 
+         eng_comf_school = q98,
+         eng_comf_friends = q99,
+         eng_comf_general = q100,
+         cesd1 = q116,
+         cesd2 = q117, 
+         cesd3 = q118, 
+         cesd4 = q119,
+         cesd5 = q120, 
+         cesd6 = q121, 
+         cesd7 = q122, 
+         cesd8 = q123,
+         cesd9 = q124, 
+         cesd10 = q125, 
+         cesd11 = q126) %>%
+  mutate_at(vars(starts_with("cesd")), as.numeric) %>%
+  mutate_at(vars(starts_with("eng")), as.numeric) %>%
+  mutate_at(vars(starts_with("sp")), as.numeric) %>%
+  arrange(fam_id) %>%
+  filter(sp_comf_school < 6 & #filtering out two cases where values outside of the range indicate
+           cesd11 < 5)        #participant declined to respond to relevant items
+
+subtract1 <- function(x, na.rm = TRUE) (x-1)
+
+yw1_dep <- yw1 %>%
+  mutate_at(vars(starts_with("cesd")), subtract1) %>%
+  mutate(cesd5_r = likert_reverse(cesd5, top = 3, bottom = 0),
+         cesd8_r = likert_reverse(cesd8, top = 3, bottom = 0)) %>%
+  group_by(fam_id) %>%
+       mutate(cesd_total = sum(cesd1, 
+                               cesd2, 
+                               cesd3, 
+                               cesd4, 
+                               cesd5_r, 
+                               cesd6, 
+                               cesd7, 
+                               cesd8_r, 
+                               cesd9,        
+                               cesd10, 
+                               cesd11)) %>%
+  filter(! is.na(cesd_total))
+
+pw1_dep <- pw1 %>%
+  filter(parent == "Mom") %>%
+  select(fam_id, broker_factor)
+
+joined_dep <-left_join(yw1_dep, pw1_dep, by = "fam_id") %>%
+  mutate(broker_num = as.numeric(broker_factor))
+
+yw1_langdiff <- yw1_dep %>%
+  mutate(sp_comf_total = sum(sp_comf_home,
+                             sp_comf_school,
+                             sp_comf_friends,
+                             sp_comf_general),
+         eng_comf_total = sum(eng_comf_home, 
+                              eng_comf_school,
+                              eng_comf_friends,
+                              eng_comf_general))
+
+pw1_langdiff <- parent_wave1 %>%
+  janitor::clean_names() %>%
+  filter(finished == 1) %>%
+  filter(participant == 1) %>%
+  filter(response_id != "R_1ON5POXTzIXrIeb") %>%
+  select(fam_id = id_1_text,
+         broker_freq = q171,
+         eng_comf_home_p = q173_1, 
+         eng_comf_school_p = q173_3,
+         eng_comf_friends_p = q173_5, 
+         eng_comf_general_p = q173_6,
+         en_stress_yn = q174) %>%
+  arrange(fam_id) %>%
+  filter(fam_id != 418) %>%
+  mutate_at(vars(starts_with("eng")), as.numeric) %>%
+  mutate(broker_num = as.numeric(broker_freq)) %>%
+  filter(broker_num >= 0 &
+         broker_num <= 5) %>%
+  filter(eng_comf_home_p >= 0 &
+         eng_comf_home_p <=5) %>%
+  filter(eng_comf_school_p >= 0 &
+         eng_comf_school_p <=5) %>%
+  filter(eng_comf_friends_p >= 0 &
+         eng_comf_friends_p <=5) %>%
+  filter(eng_comf_general_p >= 0 &
+         eng_comf_general_p <=5) %>%
+  group_by(fam_id) %>%
+  mutate(eng_comf_total_p = sum(eng_comf_home_p,
+                              eng_comf_school_p,
+                              eng_comf_friends_p,
+                              eng_comf_general_p))
+
+pw1_langdiff <- pw1_langdiff %>%
+    select(fam_id, broker_freq, eng_comf_total_p, en_stress_yn)
+
+joined_langdiff <- left_join(yw1_langdiff, pw1_langdiff, by = "fam_id") %>%
+    select(fam_id, cesd_total, sp_comf_total, eng_comf_total, broker_freq, eng_comf_total_p, en_stress_yn) %>%
+    filter(! is.na(eng_comf_total_p)) %>%
+    mutate(langdiff = eng_comf_total - eng_comf_total_p)
+
+
+### LANG DIFF AND BROKER FREQ
+joined_langdiff %>%
+  ggplot(aes(langdiff, broker_freq)) +
+  geom_jitter(alpha = 0.8, color = "#0072B2") +
+  geom_smooth(method='lm', formula= y~x, se = FALSE, color = "black") +
+  xlab("Youth-parent difference with respect to comfort with English") +
+  ylab("Parent-reported language brokering") + 
+  labs(#subtitle = "Youth-parent difference with respect to English comfort is only marginally predictive of #brokering",
+    caption = "Score of 16 indicates that youth has maximal comfort with English and parent has minimal comfort") +
+  theme_minimal() +
+  geom_text(aes(x = 2.5, y = 3, label = "r = 0.24, p = 0.048"))
+                
+#cor.test(joined_langdiff$langdiff, joined_langdiff$broker_freq)
+
+
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Differential linguistic acculturation is not predictive of youth depressive symptoms
+
+```{r}
+
+###DIFF LINGUISTIC ACCULTURATION AND DEPRESSIVE SYMPTOMS
+joined_langdiff %>%
+  ggplot(aes(langdiff, cesd_total)) +
+  geom_jitter(alpha = 0.8, color = "#d55e00") +
+  xlab("Youth-parent difference with respect to comfort with English") +
+  ylab("Youth-reported depressive symptoms") +
+  theme_minimal()
+
+```
+
+### Nor is brokering predictive of youth depressive symptoms
+
+```{r}
+
+### BROKER FREQ AND DEPRESSIVE SYMPTOMS
+joined_dep %>%
+  ggplot(aes(broker_num, cesd_total)) +
+  geom_jitter(alpha = 0.9, color = "#cc79a7") +
+  xlab("Parent-reported language brokering frequency") +
+  ylab("Youth-reported depressive symptoms") +
+  theme_minimal()
+
+```
+
+# Moderators? {data-icon="fa-bus"}
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Of differential acculturation
+
+```{r}
+
+joined_langdiff %>%
+  mutate(en_stress_factor = as.factor(en_stress_yn)) %>%
+  mutate(en_stress_factor = fct_recode(en_stress_factor,
+                                       "No daily language obstacles" = "0",
+                                       "Daily language-related obstacles" = "1")) %>%
+ #group_by(en_stress_factor)
+  ggplot(aes(langdiff, cesd_total, color = en_stress_factor)) +
+  geom_jitter() + 
+  geom_smooth(method='lm', formula= y~x, se = FALSE, aes(color = en_stress_factor))+
+  labs(color = "English-related stress?",
+       subtitle = "Relationship between differential linguistic acculturation and youth depression  \ndoes not depend on parent stress around limited English proficiency") +
+  scale_color_OkabeIto() +
+  xlab("Youth-parent difference with respect to comfort with English") +
+  ylab("Youth-reported depressive symptoms") +
+  theme_minimal()
+
+```
+
+### Of brokering
+
+```{r}
+
+joined_langdiff %>%
+  mutate(en_stress_factor = as.factor(en_stress_yn)) %>%
+  mutate(en_stress_factor = fct_recode(en_stress_factor,
+                                       "No daily language-related obstacles" = "0",
+                                       "Daily language-related obstacles" = "1")) %>%
+  ggplot(aes(broker_freq, cesd_total, color = en_stress_factor)) +
+  geom_jitter() +
+  geom_smooth(method='lm', formula= y~x, se = FALSE, aes(color = en_stress_factor))+
+  labs(color = "English-related stress?",
+       subtitle = "Brokering may be protective for adolescents whose parents experience  \ndaily language stress") +
+  scale_color_OkabeIto() +
+  xlab("Parent-reported brokering") +
+  ylab("Youth-reported depressive symptoms") +
+  theme_minimal()
+
+```
+
+
+
+
+
